@@ -1,0 +1,2 @@
+# По одному URL публикации на строку. Скопируй в b17_post_urls.txt и подставь свои ссылки.
+# https://www.b17.ru/articles/example/
