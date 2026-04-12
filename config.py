@@ -1,5 +1,7 @@
 """Загрузка настроек из переменных окружения и .env."""
 
+from __future__ import annotations
+
 import os
 import sys
 from pathlib import Path
@@ -117,6 +119,10 @@ B17_PW_LOCAL_PROFILE_DIR = _strip(os.getenv("B17_PW_LOCAL_PROFILE_DIR")) or str(
 )
 # Бот: подключиться к уже запущенному Chrome (chrome_start_debug.bat) — тот же профиль и вход в аккаунт Google
 B17_USE_CDP = _env_bool("B17_USE_CDP")
+# VPS без X11: B17_HEADLESS=1 с B17_USE_STORAGE_STATE=1 (иначе Playwright: Missing X server).
+B17_HEADLESS = _env_bool("B17_HEADLESS")
+# После успешного прогона — пауза (сек) и повтор с начала. 0 = один прогон и выход (как раньше).
+B17_LOOP_AFTER_SEC = float(os.getenv("B17_LOOP_AFTER_SEC") or "0")
 
 
 def _article_first_segments() -> tuple[str, ...] | None:

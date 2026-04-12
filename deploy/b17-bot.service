@@ -1,0 +1,25 @@
+# Пример systemd для VPS (Ubuntu). Пути и User поправь под себя.
+# cp deploy/b17-bot.service /etc/systemd/system/b17-bot.service
+# systemctl daemon-reload && systemctl enable --now b17-bot
+#
+# В /opt/b17_parcing/.env обязательно для сервера без монитора:
+#   B17_USE_STORAGE_STATE=1
+#   B17_HEADLESS=1
+#   B17_LOOP_AFTER_SEC=3600
+# (и ключи LLM). При B17_HEADLESS=1 xvfb-run не нужен.
+
+[Unit]
+Description=b17 comment bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/b17_parcing
+EnvironmentFile=/opt/b17_parcing/.env
+ExecStart=/opt/b17_parcing/.venv/bin/python /opt/b17_parcing/b17_comment_bot.py --from-feed
+Restart=on-failure
+RestartSec=120
+
+[Install]
+WantedBy=multi-user.target

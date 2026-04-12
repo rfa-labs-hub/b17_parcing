@@ -157,7 +157,7 @@ def _launch_browser(
 
     if want_storage and storage_path.is_file():
         logger.info("Режим браузера: Playwright Chromium + storage_state (%s)", storage_path)
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=config.B17_HEADLESS)
         context = browser.new_context(storage_state=str(storage_path))
         return browser, context
 
@@ -177,7 +177,7 @@ def _launch_browser(
         )
         context = p.chromium.launch_persistent_context(
             config.B17_PW_LOCAL_PROFILE_DIR,
-            headless=False,
+            headless=config.B17_HEADLESS,
             no_viewport=True,
         )
         return None, context
@@ -191,7 +191,7 @@ def _launch_browser(
     context = p.chromium.launch_persistent_context(
         user_data,
         channel="chrome",
-        headless=False,
+        headless=config.B17_HEADLESS,
         args=[f"--profile-directory={profile}"],
         no_viewport=True,
         ignore_default_args=config.IGNORE_DEFAULT_ARGS_FOR_SYSTEM_CHROME,
@@ -531,12 +531,11 @@ def run(
                     title, body = _extract_post(page)
                     comment = llm.generate_comment_text(title, body)
                     print(f"\n--- Комментарий ---\n{comment}\n", flush=True)
-                    if dry_run:
-                        continue
-                    _fill_comment_field(page, comment)
-                    _click_send_comment(page)
-                    page.wait_for_load_state("domcontentloaded", timeout=60_000)
-                    logger.info("Отправлено.")
+                    if not dry_run:
+                        _fill_comment_field(page, comment)
+                        _click_send_comment(page)
+                        page.wait_for_load_state("domcontentloaded", timeout=60_000)
+                        logger.info("Отправлено.")
                 except Exception as e:
                     logger.exception("Ошибка на %s: %s", url, e)
                 if i < len(urls):
@@ -596,16 +595,26 @@ def main() -> int:
         help="Адрес CDP (по умолчанию B17_CHROME_CDP_URL, обычно http://127.0.0.1:9222)",
     )
     args = ap.parse_args()
-    return run(
-        dry_run=args.dry_run,
-        max_posts=args.max_posts,
-        kill_chrome=not args.no_kill_chrome,
-        from_feed=args.from_feed,
-        use_chromium=args.use_chromium,
-        use_storage=args.use_storage,
-        connect_cdp=args.connect_cdp,
-        cdp_url=args.cdp_url,
-    )
+    while True:
+        code = run(
+            dry_run=args.dry_run,
+            max_posts=args.max_posts,
+            kill_chrome=not args.no_kill_chrome,
+            from_feed=args.from_feed,
+            use_chromium=args.use_chromium,
+            use_storage=args.use_storage,
+            connect_cdp=args.connect_cdp,
+            cdp_url=args.cdp_url,
+        )
+        if config.B17_LOOP_AFTER_SEC <= 0:
+            return code
+        if code != 0:
+            return code
+        logger.info(
+            "Следующий прогон через %.0f с (B17_LOOP_AFTER_SEC). Останов: Ctrl+C или останови сервис.",
+            config.B17_LOOP_AFTER_SEC,
+        )
+        time.sleep(config.B17_LOOP_AFTER_SEC)
 
 
 if __name__ == "__main__":
