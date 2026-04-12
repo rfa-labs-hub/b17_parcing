@@ -90,9 +90,10 @@ B17_CSS_POST_TITLE = _strip(os.getenv("B17_CSS_POST_TITLE"))
 B17_CSS_POST_BODY = _strip(os.getenv("B17_CSS_POST_BODY"))
 B17_CSS_COMMENT_FIELD = _strip(os.getenv("B17_CSS_COMMENT_FIELD")) or "textarea"
 B17_CSS_COMMENT_SUBMIT = _strip(os.getenv("B17_CSS_COMMENT_SUBMIT")) or 'button[type="submit"]'
-# Пауза между комментариями (секунды). По умолчанию 300 = 5 мин — чтобы сайт не ругался на спам.
-B17_DELAY_SEC = float(os.getenv("B17_DELAY_SEC") or "180")
-B17_MAX_POSTS = int(os.getenv("B17_MAX_POSTS") or "10")
+# Пауза между комментариями (секунды). 8640 = 144 мин (~10 комментариев за сутки при равномерной паузе).
+B17_DELAY_SEC = float(os.getenv("B17_DELAY_SEC") or "8640")
+# Постов за один прогон (--from-feed или список URL). 0 = без лимита (все ссылки, собранные со скролла ленты).
+B17_MAX_POSTS = int(os.getenv("B17_MAX_POSTS") or "0")
 
 # Лента главной (b17_comment_bot.py --from-feed)
 B17_FEED_URL = _strip(os.getenv("B17_FEED_URL")) or "https://www.b17.ru/"

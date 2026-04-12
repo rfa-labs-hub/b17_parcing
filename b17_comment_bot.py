@@ -539,7 +539,8 @@ def run(
                     logger.info("Отправлено.")
                 except Exception as e:
                     logger.exception("Ошибка на %s: %s", url, e)
-                time.sleep(config.B17_DELAY_SEC)
+                if i < len(urls):
+                    time.sleep(config.B17_DELAY_SEC)
         finally:
             try:
                 context.close()
@@ -561,7 +562,7 @@ def main() -> int:
         type=int,
         default=None,
         metavar="N",
-        help="Сколько постов обработать (по умолчанию B17_MAX_POSTS из .env, сейчас обычно 10 для ленты)",
+        help="Сколько постов обработать (по умолчанию B17_MAX_POSTS из .env; 0 = без лимита)",
     )
     ap.add_argument(
         "--from-feed",
