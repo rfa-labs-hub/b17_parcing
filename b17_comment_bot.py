@@ -32,7 +32,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from playwright.sync_api import Browser, BrowserContext, Page, sync_playwright
 
@@ -419,10 +419,16 @@ _PROFILE_SLUG_EXCLUDE = frozenset(
 
 
 def _nick_from_profile_url(url: str) -> str | None:
-    """Профиль: https://www.b17.ru/<ник>/ — один сегмент пути, не служебный."""
+    """Профиль b17: абсолютный или относительный URL вида /<ник>/."""
     u = (url or "").strip()
     if not u:
         return None
+    if u.startswith("//"):
+        u = "https:" + u
+    if u.startswith("/"):
+        u = urljoin("https://www.b17.ru", u)
+    elif "://" not in u and u.lower().startswith(("b17.ru/", "www.b17.ru/")):
+        u = "https://" + u
     p = urlparse(u)
     host = (p.netloc or "").lower()
     if "b17.ru" not in host:
@@ -516,7 +522,7 @@ def _extract_author_nick(page: Page) -> str | None:
                 root = page.locator(scope)
                 if root.count() == 0:
                     continue
-                part = page.locator(f'{scope} a[href*="b17.ru"]')
+                part = page.locator(f"{scope} a[href]")
                 if part.count() > 0:
                     hrefs.extend(part.evaluate_all("els => els.map(e => e.href)"))
                     break
@@ -524,7 +530,7 @@ def _extract_author_nick(page: Page) -> str | None:
                 continue
     if not hrefs:
         try:
-            part = page.locator('a[href*="b17.ru"]')
+            part = page.locator("a[href]")
             if part.count() > 0:
                 hrefs = part.evaluate_all("els => els.map(e => e.href)")
         except Exception:
