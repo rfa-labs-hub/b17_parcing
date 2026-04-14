@@ -18,6 +18,9 @@
 Пример:
   python b17_comment_bot.py --from-feed --dry-run --max-posts 3
   python b17_comment_bot.py --from-feed --connect-cdp
+
+Учёт авторов: URL профиля вида https://www.b17.ru/<ник>/ — ники в B17_AUTHOR_NICKS_FILE (текст).
+После B17_AUTHOR_RESET_AFTER_CYCLES успешных прогонов файл обнуляется (по умолчанию 21).
 """
 
 from __future__ import annotations
@@ -394,6 +397,145 @@ def _extract_post(page: Page) -> tuple[str, str]:
     return title.strip() or "(без заголовка)", (body.strip() or "")[:12000]
 
 
+# Сегмент пути не профиль: /article/…, /forum/… и т.д. (односегментные URL профиля: /tatiana_sysoeva/)
+_PROFILE_SLUG_EXCLUDE = frozenset(
+    {
+        "article",
+        "forum",
+        "tag",
+        "user",
+        "login",
+        "register",
+        "search",
+        "api",
+        "static",
+        "privacy",
+        "terms",
+        "help",
+        "about",
+        "games",
+    }
+)
+
+
+def _nick_from_profile_url(url: str) -> str | None:
+    """Профиль: https://www.b17.ru/<ник>/ — один сегмент пути, не служебный."""
+    u = (url or "").strip()
+    if not u:
+        return None
+    p = urlparse(u)
+    host = (p.netloc or "").lower()
+    if "b17.ru" not in host:
+        return None
+    parts = [x for x in p.path.strip("/").split("/") if x]
+    if len(parts) != 1:
+        return None
+    seg = parts[0]
+    if seg.lower() in _PROFILE_SLUG_EXCLUDE:
+        return None
+    return seg.lower()
+
+
+def _load_author_nicks_set(path: Path) -> set[str]:
+    if not path.is_file():
+        return set()
+    out: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        out.add(s.lower())
+    return out
+
+
+def _append_author_nick(path: Path, nick: str) -> None:
+    nick = nick.strip().lower()
+    if not nick:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(nick + "\n")
+
+
+def _read_run_count(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    try:
+        return max(0, int(path.read_text(encoding="utf-8").strip() or "0"))
+    except ValueError:
+        return 0
+
+
+def _write_run_count(path: Path, n: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(str(n), encoding="utf-8")
+
+
+def _increment_run_and_maybe_reset_authors() -> None:
+    nicks_path = Path(config.B17_AUTHOR_NICKS_FILE)
+    counter_path = Path(config.B17_AUTHOR_RUN_COUNTER_FILE)
+    limit = max(1, config.B17_AUTHOR_RESET_AFTER_CYCLES)
+    n = _read_run_count(counter_path) + 1
+    if n >= limit:
+        if nicks_path.is_file():
+            nicks_path.write_text("", encoding="utf-8")
+        _write_run_count(counter_path, 0)
+        logger.info(
+            "Достигнут лимит прогонов (%s): файл ников очищён (%s), счётчик обнулён.",
+            limit,
+            nicks_path,
+        )
+    else:
+        _write_run_count(counter_path, n)
+        logger.info(
+            "Прогон %s/%s — после следующего сброса файл ников (см. B17_AUTHOR_RESET_AFTER_CYCLES).",
+            n,
+            limit,
+        )
+
+
+def _extract_author_nick(page: Page) -> str | None:
+    hrefs: list[str] = []
+    sel = (config.B17_CSS_POST_AUTHOR or "").strip()
+    if sel:
+        try:
+            loc = page.locator(sel)
+            if loc.count() > 0:
+                first = loc.first
+                h = first.get_attribute("href")
+                if h:
+                    hrefs.append(h)
+                inner = page.locator(f"{sel} a[href]")
+                if inner.count() > 0:
+                    hrefs.extend(inner.evaluate_all("els => els.map(e => e.href)"))
+        except Exception as e:
+            logger.warning("B17_CSS_POST_AUTHOR: %s", e)
+    if not hrefs:
+        for scope in ("main", "article"):
+            try:
+                root = page.locator(scope)
+                if root.count() == 0:
+                    continue
+                part = page.locator(f'{scope} a[href*="b17.ru"]')
+                if part.count() > 0:
+                    hrefs.extend(part.evaluate_all("els => els.map(e => e.href)"))
+                    break
+            except Exception:
+                continue
+    if not hrefs:
+        try:
+            part = page.locator('a[href*="b17.ru"]')
+            if part.count() > 0:
+                hrefs = part.evaluate_all("els => els.map(e => e.href)")
+        except Exception:
+            pass
+    for h in hrefs:
+        nick = _nick_from_profile_url(h)
+        if nick:
+            return nick
+    return None
+
+
 def _fill_comment_field(page: Page, text: str) -> None:
     """Поле «ваш комментарий» — по плейсхолдеру / роли, иначе селектор из .env."""
     try:
@@ -441,6 +583,7 @@ def run(
     connect_cdp: bool = False,
     cdp_url: str | None = None,
 ) -> int:
+    completed = False
     urls: list[str] = []
     if not from_feed:
         urls = load_post_urls()
@@ -523,23 +666,44 @@ def run(
                 config.LLM_PROVIDER,
             )
 
+            nicks_path = Path(config.B17_AUTHOR_NICKS_FILE)
+            author_seen = _load_author_nicks_set(nicks_path)
+            logger.info(
+                "Учёт авторов: файл %s (%s ников), сброс списка после %s прогонов (счётчик в %s).",
+                nicks_path,
+                len(author_seen),
+                config.B17_AUTHOR_RESET_AFTER_CYCLES,
+                config.B17_AUTHOR_RUN_COUNTER_FILE,
+            )
+
             for i, url in enumerate(urls, 1):
                 logger.info("[%s/%s] %s", i, len(urls), url)
                 try:
                     page.goto(url, wait_until="domcontentloaded", timeout=120_000)
                     time.sleep(1)
-                    title, body = _extract_post(page)
-                    comment = llm.generate_comment_text(title, body)
-                    print(f"\n--- Комментарий ---\n{comment}\n", flush=True)
-                    if not dry_run:
-                        _fill_comment_field(page, comment)
-                        _click_send_comment(page)
-                        page.wait_for_load_state("domcontentloaded", timeout=60_000)
-                        logger.info("Отправлено.")
+                    nick = _extract_author_nick(page)
+                    if nick and nick in author_seen:
+                        logger.info(
+                            "Пропуск: автор %s уже в списке — комментарий не отправляем.",
+                            nick,
+                        )
+                    else:
+                        title, body = _extract_post(page)
+                        comment = llm.generate_comment_text(title, body)
+                        print(f"\n--- Комментарий ---\n{comment}\n", flush=True)
+                        if not dry_run:
+                            _fill_comment_field(page, comment)
+                            _click_send_comment(page)
+                            page.wait_for_load_state("domcontentloaded", timeout=60_000)
+                            logger.info("Отправлено.")
+                            if nick:
+                                _append_author_nick(nicks_path, nick)
+                                author_seen.add(nick)
                 except Exception as e:
                     logger.exception("Ошибка на %s: %s", url, e)
                 if i < len(urls):
                     time.sleep(config.B17_DELAY_SEC)
+            completed = True
         finally:
             try:
                 context.close()
@@ -550,7 +714,9 @@ def run(
                     browser.close()
                 except Exception:
                     pass
-    return 0
+    if completed:
+        _increment_run_and_maybe_reset_authors()
+    return 0 if completed else 1
 
 
 def main() -> int:

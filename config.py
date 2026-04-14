@@ -109,6 +109,18 @@ B17_FEED_EXTRA_EXCLUDE_PREFIXES = _strip(os.getenv("B17_FEED_EXTRA_EXCLUDE_PREFI
 # Если задан CSS-селектор — ссылки берутся только из этого блока (меньше мусора из сайдбара). Пример: main, .feed, #content
 B17_FEED_LINK_CONTAINER_SELECTOR = _strip(os.getenv("B17_FEED_LINK_CONTAINER_SELECTOR"))
 
+# Учёт авторов по нику из URL профиля https://www.b17.ru/<ник>/ (b17_comment_bot.py)
+B17_AUTHOR_NICKS_FILE = _strip(os.getenv("B17_AUTHOR_NICKS_FILE")) or str(
+    Path(__file__).resolve().parent / "b17_commented_authors.txt"
+)
+B17_AUTHOR_RUN_COUNTER_FILE = _strip(os.getenv("B17_AUTHOR_RUN_COUNTER_FILE")) or str(
+    Path(__file__).resolve().parent / "b17_author_run_counter.txt"
+)
+# После стольких успешных прогонов run() файл с никами обнуляется (можно снова комментировать тех же авторов).
+B17_AUTHOR_RESET_AFTER_CYCLES = int(os.getenv("B17_AUTHOR_RESET_AFTER_CYCLES") or "21")
+# Опционально: CSS ссылки на профиль автора (иначе ищем первую подходящую ссылку в main/article).
+B17_CSS_POST_AUTHOR = _strip(os.getenv("B17_CSS_POST_AUTHOR"))
+
 # Бот (b17_comment_bot.py): если системный Google Chrome не открывает сайт / about:blank
 # — B17_USE_PLAYWRIGHT_CHROMIUM=1: встроенный Chromium + каталог B17_PW_LOCAL_PROFILE_DIR (логин один раз в этом окне).
 # — B17_USE_STORAGE_STATE=1: браузер Playwright + куки из b17_storage_state.json (после python b17_login.py --manual и т.п.).
